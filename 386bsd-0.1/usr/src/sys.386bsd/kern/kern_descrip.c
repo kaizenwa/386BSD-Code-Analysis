@@ -389,33 +389,58 @@ fdalloc(p, want, result)
 	 * expanding the ofile array.
 	 */
 	lim = p->p_rlimit[RLIMIT_OFILE].rlim_cur;
+
 	for (;;) {
 		last = min(fdp->fd_nfiles, lim);
+		/*
+		 * Start at the first free file index if the
+		 * descriptor we requested is < fd_freefile.
+		 */
 		if ((i = want) < fdp->fd_freefile)
 			i = fdp->fd_freefile;
+
 		for (; i < last; i++) {
+			/* Check if the entry is unused */
 			if (fdp->fd_ofiles[i] == NULL) {
 				fdp->fd_ofileflags[i] = 0;
+
+				/* Update the last file desc */
 				if (i > fdp->fd_lastfile)
 					fdp->fd_lastfile = i;
+				/*
+				 * Update the first free file desc.
+				 *
+				 * Why don't we always do this regardless of
+				 * want's value? 
+				 */
 				if (want <= fdp->fd_freefile)
 					fdp->fd_freefile = i;
+
+				/* Assign IN/OUT arg and return */
 				*result = i;
 				return (0);
 			}
 		}
-
 		/*
 		 * No space in current array.  Expand?
 		 */
 		if (fdp->fd_nfiles >= lim)
 			return (EMFILE);
+
+		/*
+		 * If the nb of open files < the initial expansion value
+		 * NDEXTENT, we expand to that size. Otherwise, we double
+		 * the size of the open file desc table.
+		 */
 		if (fdp->fd_nfiles < NDEXTENT)
 			nfiles = NDEXTENT;
 		else
 			nfiles = 2 * fdp->fd_nfiles;
+
+		/* Allocate the new open file file desc table */
 		MALLOC(newofile, struct file **, nfiles * OFILESIZE,
 		    M_FILEDESC, M_WAITOK);
+
 		newofileflags = (char *) &newofile[nfiles];
 		/*
 		 * Copy the existing ofile and ofileflags arrays
@@ -423,9 +448,13 @@ fdalloc(p, want, result)
 		 */
 		bcopy(fdp->fd_ofiles, newofile,
 			(i = sizeof(struct file *) * fdp->fd_nfiles));
+
+		/* Zero out new unused entries */
 		bzero((char *)newofile + i, nfiles * sizeof(struct file *) - i);
 		bcopy(fdp->fd_ofileflags, newofileflags,
 			(i = sizeof(char) * fdp->fd_nfiles));
+
+		/* Copy old open file flags */
 		bzero(newofileflags + i, nfiles * sizeof(char) - i);
 		if (fdp->fd_nfiles > NDFILE)
 			FREE(fdp->fd_ofiles, M_FILEDESC);
@@ -433,6 +462,8 @@ fdalloc(p, want, result)
 		fdp->fd_ofileflags = newofileflags;
 		fdp->fd_nfiles = nfiles;
 		fdexpand++;
+
+		/* We don't free the old data structures? */
 	}
 }
 
@@ -460,7 +491,7 @@ fdavail(p, n)
 
 /*
  * Create a new open file structure and allocate
- * a file decriptor for the process that refers to it.
+ * a file descriptor for the process that refers to it.
  */
 falloc(p, resultfp, resultfd)
 	register struct proc *p;
@@ -483,24 +514,39 @@ falloc(p, resultfp, resultfd)
 	 * the list of open files.
 	 */
 	nfiles++;
+
+	/* MALLOC(space, cast, size, type, flags) */
 	MALLOC(fp, struct file *, sizeof(struct file), M_FILE, M_WAITOK);
+
+	/* Check if file descriptor 0 is open */
 	if (fq = p->p_fd->fd_ofiles[0])
+		/* Point fpp to active file list ptr */
 		fpp = &fq->f_filef;
 	else
 		fpp = &filehead;
+
+	/* Insert new file entry into the open descriptor table */
 	p->p_fd->fd_ofiles[i] = fp;
+
+	/* If the first active file is descriptor 0 */
 	if (fq = *fpp)
 		fq->f_fileb = &fp->f_filef;
 	fp->f_filef = fq;
 	fp->f_fileb = fpp;
 	*fpp = fp;
+
+	/* Initialize file entry */
 	fp->f_count = 1;
 	fp->f_msgcount = 0;
 	fp->f_offset = 0;
 	fp->f_cred = p->p_ucred;
 	crhold(fp->f_cred);
+
+	/* Assign the new fp to IN/OUT arg */
 	if (resultfp)
 		*resultfp = fp;
+
+	/* Assign the new fd to IN/OUT arg */
 	if (resultfd)
 		*resultfd = i;
 	return (0);
