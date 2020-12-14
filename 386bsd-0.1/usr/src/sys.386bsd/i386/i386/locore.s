@@ -602,21 +602,22 @@ _copyin:
 	pushl	%esi
 	pushl	%edi
 	pushl	%ebx
-	movl	12(%esp),%esi
-	movl	16(%esp),%edi
-	movl	20(%esp),%ecx
-	shrl	$2,%ecx
+	movl	12(%esp),%esi	// source
+	movl	16(%esp),%edi	// destination
+	movl	20(%esp),%ecx	// byte count
+	shrl	$2,%ecx			// Convert bytes to dwords
 	cld
 	rep
-	movsl
-	movl	20(%esp),%ecx
-	andl	$3,%ecx
+	movsl					// Copy %ecx dwords from %esi to %edi
+
+	movl	20(%esp),%ecx	// byte count
+	andl	$3,%ecx			// leftover bytes to write
 	rep
-	movsb
+	movsb					// Copy %ecx leftover bytes
 	popl	%ebx
 	popl	%edi
 	popl	%esi
-	xorl	%eax,%eax
+	xorl	%eax,%eax		// Set return value to 0
 	movl	_curpcb,%edx
 	movl	%eax,PCB_ONFAULT(%edx)
 	ret
