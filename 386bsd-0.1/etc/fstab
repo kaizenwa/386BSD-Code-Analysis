@@ -1,0 +1,9 @@
+/dev/wd0a		/		ufs rw 1 1
+/dev/wd0b		none		swap sw -1 -1
+#/dev/wd0b		/tmp		mfs rw,s=2000 0 0
+
+/dev/wd1a		/volume/386BSD1.0		ufs rw 2 1
+
+nyx.lan:/Archive1/william	/volume/nyx		nfs rw,tcp,intr 0 0
+boson.lan:/Users/william/software/386bsd-repo	/volume/repo	nfs rw,tcp,intr 0 0
+boson.lan:/Users/william/odysseus	/volume/scratch		nfs rw,tcp,intr 0 0
