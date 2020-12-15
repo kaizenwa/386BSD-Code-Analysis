@@ -353,25 +353,50 @@ iupdat(ip, ta, tm, waitfor)
 	int error;
 
 	fs = ip->i_fs;
+	/*
+	 * Return early if no relevant flags are set or this
+	 * inode is on a read-only fs
+	 */
 	if ((ip->i_flag & (IUPD|IACC|ICHG|IMOD)) == 0)
 		return (0);
 	if (vp->v_mount->mnt_flag & MNT_RDONLY)
 		return (0);
+
+	/* Read the inode we want to update from the disk into bp */ 
 	error = bread(ip->i_devvp, fsbtodb(fs, itod(fs, ip->i_number)),
 		(int)fs->fs_bsize, NOCRED, &bp);
 	if (error) {
 		brelse(bp);
 		return (error);
 	}
+	/* Update the in-core inode according to its set flags */
 	if (ip->i_flag&IACC)
 		ip->i_atime = ta->tv_sec;
 	if (ip->i_flag&IUPD)
 		ip->i_mtime = tm->tv_sec;
 	if (ip->i_flag&ICHG)
 		ip->i_ctime = time.tv_sec;
+
+	/* Clear the flags */
 	ip->i_flag &= ~(IUPD|IACC|ICHG|IMOD);
+
+	/*
+ 	 * INOPB is the number of inodes in a secondary 
+ 	 * storage block. The mod operation ensures that
+ 	 * the inode number doesn't exceed the disk block.
+ 	 *
+ 	 * This is important since the inode number can be
+ 	 * a large range of numbers, and we do not know
+ 	 * which disk block it will end up on.
+ 	 * 
+	 * itoo(fs, x)	((x) % INOPB(fs))
+	 */
 	dp = bp->b_un.b_dino + itoo(fs, ip->i_number);
+
+	/* Assign the updated ino's dinode to the buf's dinode reg */
 	*dp = ip->i_din;
+
+	/* Update the dinode with either a sync or async write */
 	if (waitfor) {
 		return (bwrite(bp));
 	} else {

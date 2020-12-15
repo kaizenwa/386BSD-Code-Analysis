@@ -23,6 +23,8 @@ open
 		ufs_create
 			maknode
 				ialloc
+				iupdat
+				direnter
 				iput
 ```
 
@@ -58,14 +60,15 @@ File: locore.s
 	fubyte					++-
 
 File: ufs_vnops.c
-	ufs_create				--+
+	ufs_create				+++
 	maknode					--+
 
 File: ufs_alloc.c
 	ialloc					---
 
 File: ufs_inode.c
-	iput					---
+	iupdat					++-
+	iput					++-
 ```
 
 ## Important Data Structures
@@ -692,8 +695,11 @@ ufs_create(ndp, vap, p)
 	struct inode *ip;
 	int error;
 
+	/* Create or obtain an inode for the new file */
 	if (error = maknode(MAKEIMODE(vap->va_type, vap->va_mode), ndp, &ip))
 		return (error);
+
+	/* Assign the inode's vnode ptr to namei data structure */
 	ndp->ni_vp = ITOV(ip);
 	return (0);
 }
@@ -717,17 +723,24 @@ maknode(mode, ndp, ipp)
 		panic("maknode: no name");
 #endif
 	*ipp = 0;
+
+	/* Regular file by default */
 	if ((mode & IFMT) == 0)
 		mode |= IFREG;
+	/* Use an inode associated with the parent's fs */
 	if ((mode & IFMT) == IFDIR)
 		ipref = dirpref(pdir->i_fs);
 	else
 		ipref = pdir->i_number;
+
+	/* Allocate an inode for the new file */
 	if (error = ialloc(pdir, ipref, mode, ndp->ni_cred, &tip)) {
+		/* Free pathname buf upon failure */
 		free(ndp->ni_pnbuf, M_NAMEI);
 		iput(pdir);
 		return (error);
 	}
+	/* Set the uid and gid for the new inode */
 	ip = tip;
 	ip->i_uid = ndp->ni_cred->cr_uid;
 	ip->i_gid = pdir->i_gid;
@@ -741,23 +754,41 @@ maknode(mode, ndp, ipp)
 		return (error);
 	}
 #endif
+	/*
+	 * Set the following flags:
+	 *
+	 * IACC = inode atime needs to be updated
+	 * IUPD = file has been modified
+	 * ICHG = inode has been changed
+	 */
 	ip->i_flag |= IACC|IUPD|ICHG;
 	ip->i_mode = mode;
+
+	/* IFTOVT(mode) (iftovt_tab[((mode) & IFMT) >> 12]) */
 	ITOV(ip)->v_type = IFTOVT(mode);	/* Rest init'd in iget() */
+
+	/* Single reference equal to the pathname we provided for open */
 	ip->i_nlink = 1;
+
+	/* Handle the setgid bit in the inode */
 	if ((ip->i_mode & ISGID) && !groupmember(ip->i_gid, ndp->ni_cred) &&
 	    suser(ndp->ni_cred, NULL))
 		ip->i_mode &= ~ISGID;
-
 	/*
 	 * Make sure inode goes to disk before directory entry.
 	 */
 	if (error = iupdat(ip, &time, &time, 1))
 		goto bad;
+
+	/* Insert the new inode into the directory */
 	if (error = direnter(ip, ndp))
 		goto bad;
+
+	/* Clear the pathname buf if we didn't ask to save it */
 	if ((ndp->ni_nameiop & SAVESTART) == 0)
 		FREE(ndp->ni_pnbuf, M_NAMEI);
+
+	/* Release the dir's inode */
 	iput(pdir);
 	*ipp = ip;
 	return (0);
@@ -768,9 +799,13 @@ bad:
 	 * or the directory so must deallocate the inode.
 	 */
 	free(ndp->ni_pnbuf, M_NAMEI);
+
+	/* Release the dir's inode */
 	iput(pdir);
 	ip->i_nlink = 0;
 	ip->i_flag |= ICHG;
+
+	/* Release the new inode */
 	iput(ip);
 	return (error);
 }
