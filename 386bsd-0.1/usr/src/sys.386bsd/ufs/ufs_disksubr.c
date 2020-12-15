@@ -71,8 +71,11 @@ disksort(dp, bp)
 	 */
 	ap = dp->b_actf;
 	if(ap == NULL) {
+		/* Set the first and last pending i/o op */
 		dp->b_actf = bp;
 		dp->b_actl = bp;
+
+		/* bp is the only buffer we want to write */
 		bp->av_forw = NULL;
 		return;
 	}

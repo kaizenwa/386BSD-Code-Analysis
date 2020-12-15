@@ -241,16 +241,27 @@ wdstrategy(register struct buf *bp)
 		goto done;
 	}
 
-	/* "soft" write protect check */
+	/*
+	 * "soft" write protect check 
+	 *
+	 * Checks the disk's flags for write protection and the buf's flags
+	 * for B_WRITE indirectly.
+	 */
 	if ((du->dk_flags & DKFL_WRITEPROT) && (bp->b_flags & B_READ) == 0) {
 		bp->b_error = EROFS;
 		bp->b_flags |= B_ERROR;
 		goto done;
 	}
 
-	/* have partitions and want to use them? */
+	/*
+	 * have partitions and want to use them? 
+	 *
+	 * If the disk drive contains a BSD disk label and wdpart does not
+	 * return WDRAW, which means that this block is NOT a partition,
+	 * we need to make sure that this i/o operation will not overwrite
+	 * the disklabel or any of its partitions.
+	 */
 	if ((du->dk_flags & DKFL_BSDLABEL) != 0 && wdpart(bp->b_dev) != WDRAW) {
-
 		/*
 		 * do bounds checking, adjust transfer. if error, process.
 		 * if end of partition, just return

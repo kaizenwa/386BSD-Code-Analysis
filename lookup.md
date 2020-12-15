@@ -23,6 +23,7 @@ lookup
 				bmap
 				spec_strategy
 					wdstrategy
+						disksort
 ```
 
 ## Reading Checklist
@@ -44,10 +45,13 @@ File: ufs_lookup.c
 
 File: ufs_vnops.c
 	ufs_access			---
-	ufs_strategy		++-
+	ufs_strategy		+++
+
+File: ufs_inode.c
+	iget				--+
 
 File: vfs__bio.c
-	bread				++-
+	bread				+++
 	getblk				++-
 	incore				++-
 	getnewbuf			++-
@@ -56,16 +60,16 @@ File: vfs_subr.c
 	bgetvp				++-
 
 File: ufs_bmap.c
-	bmap				---
+	bmap				++-
 
 File: kern/spec_vnops.c
 	spec_strategy		++-
 
 File: isa/wd.c
-	wdstrategy			---
+	wdstrategy			+++
 
-File: ufs_inode.c
-	iget				---
+File: ufs_disksubr.c
+	disksort			+--
 ```
 
 ## Important Data Structures
@@ -183,6 +187,192 @@ struct buf
 	int	b_dirtyend;		/* offset of end of dirty region */
 	caddr_t	b_saveaddr;		/* original b_addr for PHYSIO */
 };
+```
+
+### *inode* Structure
+
+```c
+/* From /sys/ufs/inode.h */
+
+/*
+ * The inode is used to describe each active (or recently active)
+ * file in the UFS filesystem. It is composed of two types of
+ * information. The first part is the information that is needed
+ * only while the file is active (such as the identity of the file
+ * and linkage to speed its lookup). The second part is the 
+ * permannent meta-data associated with the file which is read
+ * in from the permanent dinode from long term storage when the
+ * file becomes active, and is put back when the file is no longer
+ * being used.
+ */
+struct inode {
+	struct	inode *i_chain[2]; /* hash chain, MUST be first */
+	struct	vnode *i_vnode;	/* vnode associated with this inode */
+	struct	vnode *i_devvp;	/* vnode for block I/O */
+	u_long	i_flag;		/* see below */
+	dev_t	i_dev;		/* device where inode resides */
+	ino_t	i_number;	/* the identity of the inode */
+	struct	fs *i_fs;	/* filesystem associated with this inode */
+	struct	dquot *i_dquot[MAXQUOTAS]; /* pointer to dquot structures */
+	struct	lockf *i_lockf;	/* head of byte-level lock list */
+	long	i_diroff;	/* offset in dir, where we found last entry */
+	off_t	i_endoff;	/* end of useful stuff in directory */
+	long	i_spare0;
+	long	i_spare1;
+	struct	dinode i_din;	/* the on-disk dinode */
+};
+
+#define	i_mode		i_din.di_mode
+#define	i_nlink		i_din.di_nlink
+#define	i_uid		i_din.di_uid
+#define	i_gid		i_din.di_gid
+#if BYTE_ORDER == LITTLE_ENDIAN || defined(tahoe) /* ugh! -- must be fixed */
+#define	i_size		i_din.di_qsize.val[0]
+#else /* BYTE_ORDER == BIG_ENDIAN */
+#define	i_size		i_din.di_qsize.val[1]
+#endif
+#define	i_db		i_din.di_db
+#define	i_ib		i_din.di_ib
+#define	i_atime		i_din.di_atime
+#define	i_mtime		i_din.di_mtime
+#define	i_ctime		i_din.di_ctime
+#define i_blocks	i_din.di_blocks
+#define	i_rdev		i_din.di_db[0]
+#define i_flags		i_din.di_flags
+#define i_gen		i_din.di_gen
+#define	i_forw		i_chain[0]
+#define	i_back		i_chain[1]
+```
+
+### *fs* Structure
+
+```c
+/*
+ * Super block for a file system.
+ */
+#define	FS_MAGIC	0x011954
+#define	FSOKAY		0x7c269d38
+struct	fs
+{
+	struct	fs *fs_link;		/* linked list of file systems */
+	struct	fs *fs_rlink;		/*     used for incore super blocks */
+	daddr_t	fs_sblkno;		/* addr of super-block in filesys */
+	daddr_t	fs_cblkno;		/* offset of cyl-block in filesys */
+	daddr_t	fs_iblkno;		/* offset of inode-blocks in filesys */
+	daddr_t	fs_dblkno;		/* offset of first data after cg */
+	long	fs_cgoffset;		/* cylinder group offset in cylinder */
+	long	fs_cgmask;		/* used to calc mod fs_ntrak */
+	time_t 	fs_time;    		/* last time written */
+	long	fs_size;		/* number of blocks in fs */
+	long	fs_dsize;		/* number of data blocks in fs */
+	long	fs_ncg;			/* number of cylinder groups */
+	long	fs_bsize;		/* size of basic blocks in fs */
+	long	fs_fsize;		/* size of frag blocks in fs */
+	long	fs_frag;		/* number of frags in a block in fs */
+/* these are configuration parameters */
+	long	fs_minfree;		/* minimum percentage of free blocks */
+	long	fs_rotdelay;		/* num of ms for optimal next block */
+	long	fs_rps;			/* disk revolutions per second */
+/* these fields can be computed from the others */
+	long	fs_bmask;		/* ``blkoff'' calc of blk offsets */
+	long	fs_fmask;		/* ``fragoff'' calc of frag offsets */
+	long	fs_bshift;		/* ``lblkno'' calc of logical blkno */
+	long	fs_fshift;		/* ``numfrags'' calc number of frags */
+/* these are configuration parameters */
+	long	fs_maxcontig;		/* max number of contiguous blks */
+	long	fs_maxbpg;		/* max number of blks per cyl group */
+/* these fields can be computed from the others */
+	long	fs_fragshift;		/* block to frag shift */
+	long	fs_fsbtodb;		/* fsbtodb and dbtofsb shift constant */
+	long	fs_sbsize;		/* actual size of super block */
+	long	fs_csmask;		/* csum block offset */
+	long	fs_csshift;		/* csum block number */
+	long	fs_nindir;		/* value of NINDIR */
+	long	fs_inopb;		/* value of INOPB */
+	long	fs_nspf;		/* value of NSPF */
+/* yet another configuration parameter */
+	long	fs_optim;		/* optimization preference, see below */
+/* these fields are derived from the hardware */
+	long	fs_npsect;		/* # sectors/track including spares */
+	long	fs_interleave;		/* hardware sector interleave */
+	long	fs_trackskew;		/* sector 0 skew, per track */
+	long	fs_headswitch;		/* head switch time, usec */
+	long	fs_trkseek;		/* track-to-track seek, usec */
+/* sizes determined by number of cylinder groups and their sizes */
+	daddr_t fs_csaddr;		/* blk addr of cyl grp summary area */
+	long	fs_cssize;		/* size of cyl grp summary area */
+	long	fs_cgsize;		/* cylinder group size */
+/* these fields are derived from the hardware */
+	long	fs_ntrak;		/* tracks per cylinder */
+	long	fs_nsect;		/* sectors per track */
+	long  	fs_spc;   		/* sectors per cylinder */
+/* this comes from the disk driver partitioning */
+	long	fs_ncyl;   		/* cylinders in file system */
+/* these fields can be computed from the others */
+	long	fs_cpg;			/* cylinders per group */
+	long	fs_ipg;			/* inodes per group */
+	long	fs_fpg;			/* blocks per group * fs_frag */
+/* this data must be re-computed after crashes */
+	struct	csum fs_cstotal;	/* cylinder summary information */
+/* these fields are cleared at mount time */
+	char   	fs_fmod;    		/* super block modified flag */
+	char   	fs_clean;    		/* file system is clean flag */
+	char   	fs_ronly;   		/* mounted read-only flag */
+	char   	fs_flags;   		/* currently unused flag */
+	char	fs_fsmnt[MAXMNTLEN];	/* name mounted on */
+/* these fields retain the current block allocation info */
+	long	fs_cgrotor;		/* last cg searched */
+	struct	csum *fs_csp[MAXCSBUFS];/* list of fs_cs info buffers */
+	long	fs_cpc;			/* cyl per cycle in postbl */
+	short	fs_opostbl[16][8];	/* old rotation block list head */
+	long	fs_sparecon[55];	/* reserved for future constants */
+	long	fs_state;		/* validate fs_clean field */
+	quad	fs_qbmask;		/* ~fs_bmask - for use with quad size */
+	quad	fs_qfmask;		/* ~fs_fmask - for use with quad size */
+	long	fs_postblformat;	/* format of positional layout tables */
+	long	fs_nrpos;		/* number of rotaional positions */
+	long	fs_postbloff;		/* (short) rotation block list head */
+	long	fs_rotbloff;		/* (u_char) blocks for each rotation */
+	long	fs_magic;		/* magic number */
+	u_char	fs_space[1];		/* list of blocks for each rotation */
+/* actually longer */
+};
+```
+
+### *disk* Structure
+
+```c
+/*
+ * The structure of a disk drive.
+ */
+struct	disk {
+	long	dk_bc;		/* byte count left */
+	short	dk_skip;	/* blocks already transferred */
+	char	dk_unit;	/* physical unit number */
+	char	dk_state;	/* control state */
+	u_char	dk_status;	/* copy of status reg. */
+	u_char	dk_error;	/* copy of error reg. */
+	short	dk_port;	/* i/o port base */
+	
+        u_long  dk_copenpart;   /* character units open on this drive */
+        u_long  dk_bopenpart;   /* block units open on this drive */
+        u_long  dk_openpart;    /* all units open on this drive */
+	short	dk_wlabel;	/* label writable? */
+	short	dk_flags;	/* drive characteistics found */
+#define	DKFL_DOSPART	0x00001	 /* has DOS partition table */
+#define	DKFL_QUIET	0x00002	 /* report errors back, but don't complain */
+#define	DKFL_SINGLE	0x00004	 /* sector at a time mode */
+#define	DKFL_ERROR	0x00008	 /* processing a disk error */
+#define	DKFL_BSDLABEL	0x00010	 /* has a BSD disk label */
+#define	DKFL_BADSECT	0x00020	 /* has a bad144 badsector table */
+#define	DKFL_WRITEPROT	0x00040	 /* manual unit write protect */
+	struct wdparams dk_params; /* ESDI/IDE drive/controller parameters */
+	struct disklabel dk_dd;	/* device configuration data */
+	struct	dos_partition
+		dk_dospartitions[NDOSPART];	/* DOS view of disk */
+	struct	dkbad	dk_bad;	/* bad sector table */
+};
+
 ```
 
 ### *bdevsw* Structure
@@ -1067,5 +1257,176 @@ found:
 	if (ndp->ni_makeentry)
 		cache_enter(ndp);
 	return (0);
+}
+
+/*
+ * Find the block in the buffer pool.
+ * If the buffer is not present, allocate a new buffer and load
+ * its contents according to the filesystem fill routine.
+ */
+int
+bread(struct vnode *vp, daddr_t blkno, int size, struct ucred *cred,
+	struct buf **bpp)
+{
+	struct buf *bp;
+	int rv = 0;
+	/*
+	 * Obtain a buffer. If the buffer was in the cache,
+	 * its size can be >= the size we ask for.
+	 */
+	bp = getblk (vp, blkno, size);
+
+	/* if not found in cache, do some I/O */
+	if ((bp->b_flags & B_CACHE) == 0 || (bp->b_flags & B_INVAL) != 0) {
+		bp->b_flags |= B_READ;
+		bp->b_flags &= ~(B_DONE|B_ERROR|B_INVAL);
+		if (cred != NOCRED) crhold(cred);
+		bp->b_rcred = cred;
+
+		/* Calls ufs_strategy to complete i/o */
+		VOP_STRATEGY(bp);
+		rv = biowait (bp);
+	}
+	*bpp = bp;
+	
+	return (rv);
+}
+
+/*
+ * Calculate the logical to physical mapping if not done already,
+ * then call the device strategy routine.
+ */
+int checkoverlap = 0;
+
+ufs_strategy(bp)
+	register struct buf *bp;
+{
+	register struct inode *ip = VTOI(bp->b_vp);
+	struct vnode *vp;
+	int error;
+
+	/* Why is a vnode of type VBLK a panic? */
+	if (bp->b_vp->v_type == VBLK || bp->b_vp->v_type == VCHR)
+		panic("ufs_strategy: spec");
+	/*
+	 * These variables are set to the same value in getblk
+	 * for a non-cached buffer. It simply means we need to
+	 * obtain the actual block number on the disk with bmap.
+	 */
+	if (bp->b_blkno == bp->b_lblkno) {
+		if (error = bmap(ip, bp->b_lblkno, &bp->b_blkno))
+			return (error);
+		if ((long)bp->b_blkno == -1)
+			clrbuf(bp);
+	}
+	/* Block was not found on the disk */
+	if ((long)bp->b_blkno == -1) {
+		biodone(bp);
+		return (0);
+	}
+#ifdef DIAGNOSTIC
+	if (checkoverlap) {
+		register struct buf *ep;
+		struct buf *ebp;
+		daddr_t start, last;
+
+		ebp = &buf[nbuf];
+		start = bp->b_blkno;
+		last = start + btodb(bp->b_bcount) - 1;
+		for (ep = buf; ep < ebp; ep++) {
+			if (ep == bp || (ep->b_flags & B_INVAL) ||
+			    ep->b_vp == NULLVP)
+				continue;
+			if (VOP_BMAP(ep->b_vp, (daddr_t)0, &vp, (daddr_t)0))
+				continue;
+			if (vp != ip->i_devvp)
+				continue;
+			/* look for overlap */
+			if (ep->b_bcount == 0 || ep->b_blkno > last ||
+			    ep->b_blkno + btodb(ep->b_bcount) <= start)
+				continue;
+			vprint("Disk overlap", vp);
+			printf("\tstart %d, end %d overlap start %d, end %d\n",
+				start, last, ep->b_blkno,
+				ep->b_blkno + btodb(ep->b_bcount) - 1);
+			panic("Disk buffer overlap");
+		}
+	}
+#endif /* DIAGNOSTIC */
+	vp = ip->i_devvp;
+	/* v_rdev := v_un.vu_specinfo->si_rde */
+	bp->b_dev = vp->v_rdev;
+	(*(vp->v_op->vop_strategy))(bp);
+	return (0);
+}
+
+/* Read/write routine for a buffer.  Finds the proper unit, range checks
+ * arguments, and schedules the transfer.  Does not wait for the transfer
+ * to complete.  Multi-page transfers are supported.  All I/O requests must
+ * be a multiple of a sector in length.
+ */
+int
+wdstrategy(register struct buf *bp)
+{
+	register struct buf *dp;
+	struct disklabel *lp;
+	register struct partition *p;
+	struct disk *du;	/* Disk unit to do the IO.	*/
+	long maxsz, sz;
+	int	unit = wdunit(bp->b_dev);
+	int	s;
+
+	/* valid unit, controller, and request?  */
+	if (unit > NWD || bp->b_blkno < 0 || (du = wddrives[unit]) == 0) {
+		bp->b_error = EINVAL;
+		bp->b_flags |= B_ERROR;
+		goto done;
+	}
+
+	/*
+	 * "soft" write protect check 
+	 *
+	 * Checks the disk's flags for write protection and the buf's flags
+	 * for B_WRITE indirectly.
+	 */
+	if ((du->dk_flags & DKFL_WRITEPROT) && (bp->b_flags & B_READ) == 0) {
+		bp->b_error = EROFS;
+		bp->b_flags |= B_ERROR;
+		goto done;
+	}
+
+	/*
+	 * have partitions and want to use them? 
+	 *
+	 * If the disk drive contains a BSD disk label and wdpart does not
+	 * return WDRAW, which means that this block is NOT a partition,
+	 * we need to make sure that this i/o operation will not overwrite
+	 * the disklabel or any of its partitions.
+	 */
+	if ((du->dk_flags & DKFL_BSDLABEL) != 0 && wdpart(bp->b_dev) != WDRAW) {
+		/*
+		 * do bounds checking, adjust transfer. if error, process.
+		 * if end of partition, just return
+		 */
+		if (bounds_check_with_label(bp, &du->dk_dd, du->dk_wlabel) <= 0)
+			goto done;
+		/* otherwise, process transfer request */
+	}
+
+q:
+	/* queue transfer on drive, activate drive and controller if idle */
+	dp = &wdutab[unit];
+	s = splbio();
+	disksort(dp, bp);
+	if (dp->b_active == 0)
+		wdustart(du);		/* start drive */
+	if (wdtab.b_active == 0)
+		wdstart(s);		/* start controller */
+	splx(s);
+	return;
+
+done:
+	/* toss transfer, we're done early */
+	biodone(bp);
 }
 ```

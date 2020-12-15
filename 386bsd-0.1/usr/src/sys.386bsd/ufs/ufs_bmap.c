@@ -67,14 +67,20 @@ bmap(ip, bn, bnp)
 	fs = ip->i_fs;
 
 	/*
-	 * The first NDADDR blocks are direct blocks
+	 * The first NDADDR (12) blocks are direct blocks
 	 */
 	if (bn < NDADDR) {
+		/* ip->i_db = ip->i_din.di_db */
 		nb = ip->i_db[bn];
+		/* If the file block is unused */
 		if (nb == 0) {
 			*bnp = (daddr_t)-1;
 			return (0);
 		}
+		/*
+		 * fsbtodb(fs,b) ((b) << (fs)->fs_fsbtodb)
+		 *               ((b) << 9)
+		 */
 		*bnp = fsbtodb(fs, nb);
 		return (0);
 	}
@@ -82,38 +88,109 @@ bmap(ip, bn, bnp)
 	 * Determine the number of levels of indirection.
 	 */
 	sh = 1;
+
+	/* Decr bn to obtain its offset amongst indirect blocks */
 	bn -= NDADDR;
+	/*
+	 * NIADDR = 3, where three in this case refers to three
+	 * possible levels of indirection.
+	 */
 	for (j = NIADDR; j > 0; j--) {
+		/*
+		 * Multiply sh by NINDIR, which is the number of daddr_t
+		 * pointers in a filesystem block.
+		 *
+		 * For each level of indirection we traverse, the number
+		 * of addressable disk blocks increases by a factor of NINDIR.
+		 *
+		 * #define NINDIR (BSIZE/sizeof(daddr_t))
+		 */
 		sh *= NINDIR(fs);
+		/*
+		 * If bn < sh we know how many levels of indirection there
+		 * are for this block, so we break.
+		 */
 		if (bn < sh)
 			break;
+
+		/* Decr bn and check next level of indirection */
 		bn -= sh;
 	}
+	/*
+	 * If we reached j == 0, the block would require at least four
+	 * levels of indirection, meaning that it is too large.
+	 */
 	if (j == 0)
 		return (EFBIG);
 	/*
 	 * Fetch through the indirect blocks.
+	 *
+	 * This is simple to understand if you consider potential cases:
+	 *
+	 * For 1 lvl of indir, we exit the loop above with j = 3.
+	 * Thus, we read in the indir blk from ip->i_ib[0].
+	 *
+	 * For 2 lvls of indir, we exit the loop above with j = 2.
+	 * Thus, we read in the indir blk from ip->i_ib[1].
+	 *
+	 * For 3 lvls of indir, we exit the loop above with j = 1.
+	 * Thus, we read in the indir blk from ip->i_ib[2].
 	 */
 	nb = ip->i_ib[NIADDR - j];
+
+	/* Handle unused disk block */
 	if (nb == 0) {
 		*bnp = (daddr_t)-1;
 		return (0);
 	}
+	/*
+	 * To finish this clever algorithm, we continue our cases from
+	 * above.
+	 *
+	 * For 1 lvl of indir, j = 3. This means we will complete the
+	 * following for loop just once.
+	 *
+	 * For 2 lvls of indir, j = 2. This means we will complete the
+	 * following for loop twice.
+	 *
+	 * For 3 lvls of indir, j = 1. This means we will complete the
+	 * following for loop thrice.
+	 */
 	for (; j <= NIADDR; j++) {
+		/* Read in the indir disk block */
 		if (error = bread(ip->i_devvp, fsbtodb(fs, nb),
 		    (int)fs->fs_bsize, NOCRED, &bp)) {
 			brelse(bp);
 			return (error);
 		}
+		/* Assign the buf's disk addr */
 		bap = bp->b_un.b_daddr;
+		/*
+		 * Scale down the nb of addressable daddr's now that
+		 * have read in an indir disk block.
+		 */
 		sh /= NINDIR(fs);
+
+		/*
+		 * Obtain the blk's entry by using 2D coordinate
+		 * arithmetic.
+		 *
+		 * Since we decr bn for each lvl of indir we encounter,
+		 * the mod operation serves no purpose here.
+		 */
 		i = (bn / sh) % NINDIR(fs);
+		/*
+		 * Add i to the buf's disk addr and dereference it for
+		 * the next blk nb
+		 */
 		nb = bap[i];
+		/* Handle unused block */
 		if (nb == 0) {
 			*bnp = (daddr_t)-1;
 			brelse(bp);
 			return (0);
 		}
+		/* Release the indir blk */
 		brelse(bp);
 	}
 	*bnp = fsbtodb(fs, nb);
