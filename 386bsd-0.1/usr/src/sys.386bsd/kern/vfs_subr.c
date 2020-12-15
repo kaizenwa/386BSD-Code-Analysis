@@ -467,14 +467,23 @@ bgetvp(vp, bp)
 
 	if (bp->b_vp)
 		panic("bgetvp: not free");
+
+	/* Lock the vnode */
 	VHOLD(vp);
+
+	/* Link the vnode with the buffer */
 	bp->b_vp = vp;
+
+	/* Set the buffer's device type. NODEV is anonymous memory */
 	if (vp->v_type == VBLK || vp->v_type == VCHR)
 		bp->b_dev = vp->v_rdev;
 	else
 		bp->b_dev = NODEV;
 	/*
 	 * Insert onto list for new vnode.
+	 *
+	 * Or in other words, add the buffer to the vnode's
+	 * list of associated buffers.
 	 */
 	if (bq = vp->v_cleanblkhd)
 		bq->b_blockb = &bp->b_blockf;

@@ -17,9 +17,12 @@ lookup
 		iget
 		bread
 			getblk
+				incore
+				getnewbuf
 			ufs_strategy
 				bmap
 				spec_strategy
+					wdstrategy
 ```
 
 ## Reading Checklist
@@ -41,18 +44,28 @@ File: ufs_lookup.c
 
 File: ufs_vnops.c
 	ufs_access			---
-	ufs_strategy		---
+	ufs_strategy		++-
+
+File: vfs__bio.c
+	bread				++-
+	getblk				++-
+	incore				++-
+	getnewbuf			++-
+
+File: vfs_subr.c
+	bgetvp				++-
+
+File: ufs_bmap.c
+	bmap				---
+
+File: kern/spec_vnops.c
+	spec_strategy		++-
+
+File: isa/wd.c
+	wdstrategy			---
 
 File: ufs_inode.c
 	iget				---
-
-File: vfs__bio.c
-	bread				---
-	getblk				---
-
-File: spec_vnops.c
-	bmap				---
-	spec_strategy		---
 ```
 
 ## Important Data Structures
@@ -118,9 +131,22 @@ struct mount {
 };
 ```
 
-### *buf* Structure
+### *buf* Structures
 
 ```c
+/* From /sys/sys/buf.h */
+
+/*
+ * Bufhd structures used at the head of the hashed buffer queues.
+ * We only need three words for these, so this abbreviated
+ * definition saves some space.
+ */
+struct bufhd
+{
+	long	b_flags;				/* see defines below */
+	struct	buf *b_forw, *b_back;	/* fwd/bkwd pointer in chain */
+};
+
 struct buf
 {
 	long	b_flags;		/* too much goes here to describe */
@@ -156,6 +182,26 @@ struct buf
 	int	b_dirtyoff;		/* offset in buffer of dirty region */
 	int	b_dirtyend;		/* offset of end of dirty region */
 	caddr_t	b_saveaddr;		/* original b_addr for PHYSIO */
+};
+```
+
+### *bdevsw* Structure
+
+```c
+/* From /sys/i386/i386/conf.c */
+
+struct bdevsw	bdevsw[] =
+{
+	{ wdopen,	wdclose,	wdstrategy,	wdioctl,	/*0*/
+	  wddump,	wdsize,		NULL },
+	{ enodev,	enodev,		swstrategy,	enodev,		/*1*/
+	  enodev,	enodev,		NULL },
+	{ Fdopen,	fdclose,	fdstrategy,	fdioctl,	/*2*/
+	  fddump,	fdsize,		NULL },
+	{ wtopen,	wtclose,	wtstrategy,	wtioctl,	/*3*/
+	  wtdump,	wtsize,		B_TAPE },
+	{ asopen,	asclose,	asstrategy,	asioctl,	/*4*/
+	  asdump,	assize,		NULL },
 };
 ```
 

@@ -1401,14 +1401,21 @@ ufs_strategy(bp)
 	struct vnode *vp;
 	int error;
 
+	/* Why is a vnode of type VBLK a panic? */
 	if (bp->b_vp->v_type == VBLK || bp->b_vp->v_type == VCHR)
 		panic("ufs_strategy: spec");
+	/*
+	 * These variables are set to the same value in getblk
+	 * for a non-cached buffer. It simply means we need to
+	 * obtain the actual block number on the disk with bmap.
+	 */
 	if (bp->b_blkno == bp->b_lblkno) {
 		if (error = bmap(ip, bp->b_lblkno, &bp->b_blkno))
 			return (error);
 		if ((long)bp->b_blkno == -1)
 			clrbuf(bp);
 	}
+	/* Block was not found on the disk */
 	if ((long)bp->b_blkno == -1) {
 		biodone(bp);
 		return (0);
@@ -1443,6 +1450,7 @@ ufs_strategy(bp)
 	}
 #endif /* DIAGNOSTIC */
 	vp = ip->i_devvp;
+	/* v_rdev := v_un.vu_specinfo->si_rde */
 	bp->b_dev = vp->v_rdev;
 	(*(vp->v_op->vop_strategy))(bp);
 	return (0);

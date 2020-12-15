@@ -106,7 +106,10 @@ bread(struct vnode *vp, daddr_t blkno, int size, struct ucred *cred,
 {
 	struct buf *bp;
 	int rv = 0;
-
+	/*
+	 * Obtain a buffer. If the buffer was in the cache,
+	 * its size can be >= the size we ask for.
+	 */
 	bp = getblk (vp, blkno, size);
 
 	/* if not found in cache, do some I/O */
@@ -410,6 +413,11 @@ incore(struct vnode *vp, daddr_t blkno)
 	struct buf *bh;
 	struct buf *bp;
 
+	/*
+	 * BUFHASH(dvp,dblkno) \
+	 *	((struct buf *)&bufhash[(((dvp) - (struct vnode*) 0) \
+	 *  + (((int)(dblkno))/RND)) & (BUFHSZ-1)])
+	 */
 	bh = BUFHASH(vp, blkno);
 
 	/* Search hash chain */
@@ -421,7 +429,7 @@ incore(struct vnode *vp, daddr_t blkno)
 			return (bp);
 		bp = bp->b_forw;
 	}
-	
+	/* Wasn't in the hash, return NULL */
 	return(0);
 }
 
@@ -440,26 +448,52 @@ getblk(register struct vnode *vp, daddr_t blkno, int size)
 	int x;
 
 	for (;;) {
+		/* Block is in the buffer cache */
 		if (bp = incore(vp, blkno)) {
 			x = splbio();
+			/* If the cached buf is BUSY we sleep on it */
 			if (bp->b_flags & B_BUSY) {
 				bp->b_flags |= B_WANTED;
 				sleep (bp, PRIBIO);
+				/*
+				 * When we wake up, reset the prio level
+				 * and restart the search loop.
+				 */
 				splx(x);
 				continue;
 			}
 			bp->b_flags |= B_BUSY | B_CACHE;
+			/*
+			 * Remove the cached buffer from the free list.
+			 *
+			 * bremfree(bp) {\
+			 *	(bp)->av_back->av_forw = (bp)->av_forw; \
+			 *	(bp)->av_forw->av_back = (bp)->av_back; \
+			 * }
+			 */
 			bremfree(bp);
 			/*if (size > bp->b_bufsize)
 				panic("now what do we do?");*/
+
+			/* Grow the cached buf if it isn't large enough */
 			if (bp->b_bufsize != size)
 				allocbuf(bp, size);
-		} else {
-
+		} /* Block is not in the buffer cache */
+		  else {
+			/*
+			 * If we cannot find a free buf of the appropriate
+			 * size, we just contiue to loop.
+			 */
 			if((bp = getnewbuf(size)) == 0) continue;
+
+			/* Initialize block numbers */
 			bp->b_blkno = bp->b_lblkno = blkno;
+
+			/* Links the buffer to the vnode */
 			bgetvp(vp, bp);
 			x = splbio();
+
+			/* Insert the block into the buffer cache */
 			bh = BUFHASH(vp, blkno);
 			binshash(bp, bh);
 			bp->b_flags = B_BUSY;
