@@ -12,7 +12,9 @@
 ```txt
 lookup
 	ufs_lookup
+		ufs_access
 		blkatoff
+		iget
 		bread
 			getblk
 			ufs_strategy
@@ -34,17 +36,22 @@ File: vfs_lookup.c
 	lookup				+++
 
 File: ufs_lookup.c
-	ufs_lookup			--+
-	blkatoff			---
+	ufs_lookup			+++
+	blkatoff			++-
+
+File: ufs_vnops.c
+	ufs_access			---
+	ufs_strategy		---
+
+File: ufs_inode.c
+	iget				---
 
 File: vfs__bio.c
 	bread				---
 	getblk				---
 
-File: ufs_vnops.c
-	ufs_strategy		---
-
 File: spec_vnops.c
+	bmap				---
 	spec_strategy		---
 ```
 
@@ -111,48 +118,44 @@ struct mount {
 };
 ```
 
-### *vnodeops* Structure
+### *buf* Structure
 
 ```c
-/* From /sys/ufs/ufs_vnops.c */
-
-/*
- * Global vfs data structures for ufs
- */
-struct vnodeops ufs_vnodeops = {
-	ufs_lookup,		/* lookup */
-	ufs_create,		/* create */
-	ufs_mknod,		/* mknod */
-	ufs_open,		/* open */
-	ufs_close,		/* close */
-	ufs_access,		/* access */
-	ufs_getattr,		/* getattr */
-	ufs_setattr,		/* setattr */
-	ufs_read,		/* read */
-	ufs_write,		/* write */
-	ufs_ioctl,		/* ioctl */
-	ufs_select,		/* select */
-	ufs_mmap,		/* mmap */
-	ufs_fsync,		/* fsync */
-	ufs_seek,		/* seek */
-	ufs_remove,		/* remove */
-	ufs_link,		/* link */
-	ufs_rename,		/* rename */
-	ufs_mkdir,		/* mkdir */
-	ufs_rmdir,		/* rmdir */
-	ufs_symlink,		/* symlink */
-	ufs_readdir,		/* readdir */
-	ufs_readlink,		/* readlink */
-	ufs_abortop,		/* abortop */
-	ufs_inactive,		/* inactive */
-	ufs_reclaim,		/* reclaim */
-	ufs_lock,		/* lock */
-	ufs_unlock,		/* unlock */
-	ufs_bmap,		/* bmap */
-	ufs_strategy,		/* strategy */
-	ufs_print,		/* print */
-	ufs_islocked,		/* islocked */
-	ufs_advlock,		/* advlock */
+struct buf
+{
+	long	b_flags;		/* too much goes here to describe */
+	struct	buf *b_forw, *b_back;	/* hash chain (2 way street) */
+	struct	buf *av_forw, *av_back;	/* position on free list if not BUSY */
+	struct	buf *b_blockf, **b_blockb;/* associated vnode */
+#define	b_actf	av_forw			/* alternate names for driver queue */
+#define	b_actl	av_back			/*    head - isn't history wonderful */
+	long	b_bcount;		/* transfer count */
+	long	b_bufsize;		/* size of allocated buffer */
+#define	b_active b_bcount		/* driver queue head: drive active */
+	short	b_error;		/* returned after I/O */
+	dev_t	b_dev;			/* major+minor device name */
+	union {
+	    caddr_t b_addr;		/* low order core address */
+	    int	*b_words;		/* words for clearing */
+	    struct fs *b_fs;		/* superblocks */
+	    struct csum *b_cs;		/* superblock summary information */
+	    struct cg *b_cg;		/* cylinder group block */
+	    struct dinode *b_dino;	/* ilist */
+	    daddr_t *b_daddr;		/* indirect block */
+	} b_un;
+	daddr_t	b_lblkno;		/* logical block number */
+	daddr_t	b_blkno;		/* block # on device */
+	long	b_resid;		/* words not transferred after error */
+#define	b_errcnt b_resid		/* while i/o in progress: # retries */
+	struct  proc *b_proc;		/* proc doing physical or swap I/O */
+	int	(*b_iodone)();		/* function called by iodone */
+	struct	vnode *b_vp;		/* vnode for dev */
+	int	b_pfcent;		/* center page when swapping cluster */
+	struct	ucred *b_rcred;		/* ref to read credentials */
+	struct	ucred *b_wcred;		/* ref to write credendtials */
+	int	b_dirtyoff;		/* offset in buffer of dirty region */
+	int	b_dirtyend;		/* offset of end of dirty region */
+	caddr_t	b_saveaddr;		/* original b_addr for PHYSIO */
 };
 ```
 
@@ -609,8 +612,8 @@ ufs_lookup(vdp, ndp, p)
 
 	/*
 	 * If the namei op is CREATE or RENAME and there is no other
-	 * component to translate, we search for a slot to store the
-	 * the newly created/renamed file in the directory.
+	 * component to translate, we search for a slot to store the 
+	 * newly created/renamed file in the directory.
 	 */
 	if ((flag == CREATE || flag == RENAME) && *ndp->ni_next == 0) {
 		slotstatus = NONE;
@@ -645,14 +648,14 @@ ufs_lookup(vdp, ndp, p)
 
 		/*
 		 * Returns a buffer with the contents of the block at the
-		 * offset from the beginning of the dir.
+		 * offset.
 		 */
 		if (entryoffsetinblock != 0) {
 			if (error = blkatoff(dp, ndp->ni_ufs.ufs_offset,
 			    (char **)0, &bp))
 				return (error);
 		}
-		/* Pass through twice since we start in the middle */
+		/* Pass through twice since we start at the offset */
 		numdirpasses = 2;
 		nchstats.ncs_2passes++;
 	}
@@ -667,11 +670,16 @@ searchloop:
 		 * Release previous if it exists.
 		 */
 		if (blkoff(fs, ndp->ni_ufs.ufs_offset) == 0) {
+			/* Free the buffer */
 			if (bp != NULL)
 				brelse(bp);
+
+			/* Read in the next dir block */
 			if (error = blkatoff(dp, ndp->ni_ufs.ufs_offset,
 			    (char **)0, &bp))
 				return (error);
+
+			/* Reset the offset */
 			entryoffsetinblock = 0;
 		}
 		/*
@@ -691,6 +699,11 @@ searchloop:
 		 * "dirchk" to be true.
 		 */
 		ep = (struct direct *)(bp->b_un.b_addr + entryoffsetinblock);
+
+		/*
+		 * If the dir entry is invalid and mangled, call dirbad and
+		 * increment offset to the next dir entry.
+		 */
 		if (ep->d_reclen == 0 ||
 		    dirchk && dirbadentry(ep, entryoffsetinblock)) {
 			int i;
@@ -711,18 +724,31 @@ searchloop:
 		if (slotstatus != FOUND) {
 			int size = ep->d_reclen;
 
+			/* Decr free space if entry is used */
 			if (ep->d_ino != 0)
 				size -= DIRSIZ(ep);
+
+			/*
+			 * If there is free space in the directory block,
+			 * determine whether its large enough for a new
+			 * entry before and after compaction.
+			 */
 			if (size > 0) {
 				if (size >= slotneeded) {
 					slotstatus = FOUND;
 					slotoffset = ndp->ni_ufs.ufs_offset;
 					slotsize = ep->d_reclen;
 				} else if (slotstatus == NONE) {
+					/* Incr free space in dir block */
 					slotfreespace += size;
+					/* Set ptr to free space if isn't set */
 					if (slotoffset == -1)
 						slotoffset =
 						      ndp->ni_ufs.ufs_offset;
+					/*
+					 * Set slotstatus to COMPACT and rearrange
+					 * entries later.
+					 */
 					if (slotfreespace >= slotneeded) {
 						slotstatus = COMPACT;
 						slotsize =
@@ -840,6 +866,7 @@ found:
 		dp->i_flag |= IUPD|ICHG;
 	}
 
+	/* Release the dir block now that we found the entry */
 	brelse(bp);
 
 	/*
@@ -873,11 +900,15 @@ found:
 			ndp->ni_ufs.ufs_count = 0;
 		else
 			ndp->ni_ufs.ufs_count = ndp->ni_ufs.ufs_offset - prevoff;
+
+		/* Handle "." case */
 		if (dp->i_number == ndp->ni_ufs.ufs_ino) {
 			VREF(vdp);
 			ndp->ni_vp = vdp;
 			return (0);
 		}
+
+		/* Call iget to obtain the inode we are about to delete */
 		if (error = iget(dp, ndp->ni_ufs.ufs_ino, &tdp))
 			return (error);
 		/*
@@ -893,6 +924,11 @@ found:
 			iput(tdp);
 			return (EPERM);
 		}
+
+		/*
+		 * Assign the inode we wish to delete to ndp->ni_vp 
+		 * and return.
+		 */
 		ndp->ni_vp = ITOV(tdp);
 		if (!lockparent)
 			IUNLOCK(dp);
@@ -914,8 +950,15 @@ found:
 		 */
 		if (dp->i_number == ndp->ni_ufs.ufs_ino)
 			return (EISDIR);
+
+		/* Call iget to obtain the inode we wish to rename */
 		if (error = iget(dp, ndp->ni_ufs.ufs_ino, &tdp))
 			return (error);
+
+		/*
+		 * Assign the inode we wish to rename to ndp->ni_vp,
+		 * set SAVENAME, and return.
+		 */
 		ndp->ni_vp = ITOV(tdp);
 		ndp->ni_nameiop |= SAVENAME;
 		if (!lockparent)
@@ -945,21 +988,30 @@ found:
 	pdp = dp;
 	if (ndp->ni_isdotdot) {
 		IUNLOCK(pdp);	/* race to get the inode */
+
+		/* Call iget to obtain the inode of the parent dir */
 		if (error = iget(dp, ndp->ni_ufs.ufs_ino, &tdp)) {
 			ILOCK(pdp);
 			return (error);
 		}
 		if (lockparent && *ndp->ni_next == '\0')
 			ILOCK(pdp);
+
+		/* Assign the inode of the parent dir to ndp->ni_vp */
 		ndp->ni_vp = ITOV(tdp);
-	} else if (dp->i_number == ndp->ni_ufs.ufs_ino) {
+	} /* "." case */
+	  else if (dp->i_number == ndp->ni_ufs.ufs_ino) {
 		VREF(vdp);	/* we want ourself, ie "." */
 		ndp->ni_vp = vdp;
-	} else {
+	} /* Successful lookup */
+	  else {
+		/* Call iget to obtain the inode of the file we looked up */
 		if (error = iget(dp, ndp->ni_ufs.ufs_ino, &tdp))
 			return (error);
 		if (!lockparent || *ndp->ni_next != '\0')
 			IUNLOCK(pdp);
+
+		/* Assign the inode to ndp->ni_vp */
 		ndp->ni_vp = ITOV(tdp);
 	}
 
