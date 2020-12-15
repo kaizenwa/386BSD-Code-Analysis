@@ -1013,18 +1013,34 @@ copyinstr(fromaddr, toaddr, maxlength, lencopied) u_int *lencopied, maxlength;
 
 	tally = 0;
 	while (maxlength--) {
+		/* Read a char from the user addr */
 		c = fubyte(fromaddr++);
+		/*
+		 * If we failed to read a char from the user addr,
+		 * set the nb of bytes copied and return EFAULT.
+		 */
 		if (c == -1) {
 			if(lencopied) *lencopied = tally;
 			return(EFAULT);
 		}
 		tally++;
+
+		/* Write the char to the kernel addr */
 		*(char *)toaddr++ = (char) c;
+
+		/*
+		 * If the last char we wrote is a null terminator,
+		 * set the nb of bytes copied and return 0.
+		 */
 		if (c == 0){
 			if(lencopied) *lencopied = (u_int)tally;
 			return(0);
 		}
 	}
+	/*
+	 * If we don't return before exiting the loop, the string
+	 * is too long. Set nb of bytes written and return ENAMETOOLONG.
+	 */
 	if(lencopied) *lencopied = (u_int)tally;
 	return(ENAMETOOLONG);
 }
@@ -1056,11 +1072,20 @@ copystr(fromaddr, toaddr, maxlength, lencopied) u_int *lencopied, maxlength;
 	while (maxlength--) {
 		*(u_char *)toaddr = *(u_char *)fromaddr++;
 		tally++;
+		/*
+		 * If the last character we wrote was a 
+		 * null-terminator character, we are done.
+		 */
 		if (*(u_char *)toaddr++ == 0) {
 			if(lencopied) *lencopied = tally;
 			return(0);
 		}
 	}
-	if(lencopied) *lencopied = tally;
+	/*
+	 * If we don't return before exiting the loop, the string
+	 * is too long. Set nb of bytes written and return ENAMETOOLONG.
+	 */
+	if(lencopied) 
+		*lencopied = tally;
 	return(ENAMETOOLONG);
 }

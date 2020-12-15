@@ -901,9 +901,10 @@ ALTENTRY(fuibyte)
 ENTRY(fubyte)
 	movl	_curpcb,%ecx
 	movl	$fusufault,PCB_ONFAULT(%ecx) #in case we page/protection violate
-	movl	4(%esp),%edx
-	.byte	0x65		# use gs
-	movzbl	0(%edx),%eax
+	movl	4(%esp),%edx	# %edx = user addr  
+	.byte	0x65			# use gs
+	movzbl	0(%edx),%eax	# Move the long stored at user addr
+							# and zero extend the upper 3 bytes
 	movl	$0,PCB_ONFAULT(%ecx)
 	ret
 	
