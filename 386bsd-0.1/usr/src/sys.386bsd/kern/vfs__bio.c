@@ -115,6 +115,8 @@ bread(struct vnode *vp, daddr_t blkno, int size, struct ucred *cred,
 		bp->b_flags &= ~(B_DONE|B_ERROR|B_INVAL);
 		if (cred != NOCRED) crhold(cred);
 		bp->b_rcred = cred;
+
+		/* Calls ufs_strategy to complete i/o */
 		VOP_STRATEGY(bp);
 		rv = biowait (bp);
 	}
