@@ -459,7 +459,6 @@ vm_mmap(map, addr, size, prot, flags, handle, foff)
 	 */
 	object = vm_object_lookup(pager);
 	vm_object_deallocate(object);
-
 	/*
 	 * Anonymous memory.
 	 */
@@ -759,7 +758,6 @@ vm_allocate_with_pager(map, addr, size, fitit, pager, poffset, internal)
 
 	*addr = trunc_page(*addr);
 	size = round_page(size);
-
 	/*
 	 *	Lookup the pager/paging-space in the object cache.
 	 *	If it's not there, then create a new object and cache

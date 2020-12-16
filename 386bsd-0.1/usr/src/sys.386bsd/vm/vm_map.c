@@ -545,7 +545,7 @@ boolean_t vm_map_lookup_entry(map, address, entry)
 		cur = cur->next;
 
 	if (address >= cur->start) {
-	    	/*
+	    /*
 		 *	Go from hint to end of list.
 		 *
 		 *	But first, make a quick check to see if
@@ -563,25 +563,22 @@ boolean_t vm_map_lookup_entry(map, address, entry)
 		}
 	}
 	else {
-	    	/*
+	    /*
 		 *	Go from start to hint, *inclusively*
 		 */
 		last = cur->next;
 		cur = map->header.next;
 	}
-
 	/*
 	 *	Search linearly
 	 */
-
 	while (cur != last) {
 		if (cur->end > address) {
 			if (address >= cur->start) {
-			    	/*
+		    	/*
 				 *	Save this lookup for future
 				 *	hints, and return
 				 */
-
 				*entry = cur;
 				SAVE_HINT(map, cur);
 				return(TRUE);
@@ -623,20 +620,17 @@ vm_map_find(map, object, offset, addr, length, find_space)
 		/*
 		 *	Calculate the first possible address.
 		 */
-
 		if (start < map->min_offset)
 			start = map->min_offset;
 		if (start > map->max_offset) {
 			vm_map_unlock(map);
 			return (KERN_NO_SPACE);
 		}
-
 		/*
 		 *	Look for the first possible address;
 		 *	if there's already something at this
 		 *	address, we have to start after it.
 		 */
-
 		if (start == map->min_offset) {
 			if ((entry = map->first_free) != &map->header)
 				start = entry->end;
@@ -646,49 +640,39 @@ vm_map_find(map, object, offset, addr, length, find_space)
 				start = tmp_entry->end;
 			entry = tmp_entry;
 		}
-
 		/*
 		 *	In any case, the "entry" always precedes
 		 *	the proposed new region throughout the
 		 *	loop:
 		 */
-
 		while (TRUE) {
 			register vm_map_entry_t	next;
-
-		    	/*
+		    /*
 			 *	Find the end of the proposed new region.
 			 *	Be sure we didn't go beyond the end, or
 			 *	wrap around the address.
 			 */
-
 			end = start + length;
 
 			if ((end > map->max_offset) || (end < start)) {
 				vm_map_unlock(map);
 				return (KERN_NO_SPACE);
 			}
-
 			/*
 			 *	If there are no more entries, we must win.
 			 */
-
 			next = entry->next;
 			if (next == &map->header)
 				break;
-
 			/*
 			 *	If there is another entry, it must be
 			 *	after the end of the potential new region.
 			 */
-
 			if (next->start >= end)
 				break;
-
 			/*
 			 *	Didn't fit -- move to the next entry.
 			 */
-
 			entry = next;
 			start = entry->end;
 		}
@@ -1677,32 +1661,25 @@ vm_map_copy(dst_map, src_map,
 	 *	XXX While we figure out why src_destroy screws up,
 	 *	we'll do it by explicitly vm_map_delete'ing at the end.
 	 */
-
 	old_src_destroy = src_destroy;
 	src_destroy = FALSE;
-
 	/*
 	 *	Compute start and end of region in both maps
 	 */
-
 	src_start = src_addr;
 	src_end = src_start + len;
 	dst_start = dst_addr;
 	dst_end = dst_start + len;
-
 	/*
 	 *	Check that the region can exist in both source
 	 *	and destination.
 	 */
-
 	if ((dst_end < dst_start) || (src_end < src_start))
 		return(KERN_NO_SPACE);
-
 	/*
 	 *	Lock the maps in question -- we avoid deadlock
 	 *	by ordering lock acquisition by map value
 	 */
-
 	if (src_map == dst_map) {
 		vm_map_lock(src_map);
 	}
@@ -1715,7 +1692,6 @@ vm_map_copy(dst_map, src_map,
 	}
 
 	result = KERN_SUCCESS;
-
 	/*
 	 *	Check protections... source must be completely readable and
 	 *	destination must be completely writable.  [Note that if we're
@@ -1723,14 +1699,12 @@ vm_map_copy(dst_map, src_map,
 	 *	about protection, but instead about whether the region
 	 *	exists.]
 	 */
-
 	if (src_map->is_main_map && dst_map->is_main_map) {
 		if (!vm_map_check_protection(src_map, src_start, src_end,
 					VM_PROT_READ)) {
 			result = KERN_PROTECTION_FAILURE;
 			goto Return;
 		}
-
 		if (dst_alloc) {
 			/* XXX Consider making this a vm_map_find instead */
 			if ((result = vm_map_insert(dst_map, NULL,
@@ -1743,7 +1717,6 @@ vm_map_copy(dst_map, src_map,
 			goto Return;
 		}
 	}
-
 	/*
 	 *	Find the start entries and clip.
 	 *
@@ -1754,7 +1727,6 @@ vm_map_copy(dst_map, src_map,
 	 *	until we have done the first clip, as the clip
 	 *	may affect which entry we get!
 	 */
-
 	(void) vm_map_lookup_entry(src_map, src_addr, &tmp_entry);
 	src_entry = tmp_entry;
 	vm_map_clip_start(src_map, src_entry, src_start);
@@ -1762,55 +1734,44 @@ vm_map_copy(dst_map, src_map,
 	(void) vm_map_lookup_entry(dst_map, dst_addr, &tmp_entry);
 	dst_entry = tmp_entry;
 	vm_map_clip_start(dst_map, dst_entry, dst_start);
-
 	/*
 	 *	If both source and destination entries are the same,
 	 *	retry the first lookup, as it may have changed.
 	 */
-
 	if (src_entry == dst_entry) {
 		(void) vm_map_lookup_entry(src_map, src_addr, &tmp_entry);
 		src_entry = tmp_entry;
 	}
-
 	/*
 	 *	If source and destination entries are still the same,
 	 *	a null copy is being performed.
 	 */
-
 	if (src_entry == dst_entry)
 		goto Return;
-
 	/*
 	 *	Go through entries until we get to the end of the
 	 *	region.
 	 */
-
 	while (src_start < src_end) {
 		/*
 		 *	Clip the entries to the endpoint of the entire region.
 		 */
-
 		vm_map_clip_end(src_map, src_entry, src_end);
 		vm_map_clip_end(dst_map, dst_entry, dst_end);
-
 		/*
 		 *	Clip each entry to the endpoint of the other entry.
 		 */
-
 		src_clip = src_entry->start + (dst_entry->end - dst_entry->start);
 		vm_map_clip_end(src_map, src_entry, src_clip);
 
 		dst_clip = dst_entry->start + (src_entry->end - src_entry->start);
 		vm_map_clip_end(dst_map, dst_entry, dst_clip);
-
 		/*
 		 *	Both entries now match in size and relative endpoints.
 		 *
 		 *	If both entries refer to a VM object, we can
 		 *	deal with them now.
 		 */
-
 		if (!src_entry->is_a_map && !dst_entry->is_a_map) {
 			vm_map_copy_entry(src_map, dst_map, src_entry,
 						dst_entry);
@@ -1825,7 +1786,6 @@ vm_map_copy(dst_map, src_map,
 			/*
 			 *	We have to follow at least one sharing map.
 			 */
-
 			new_size = (dst_entry->end - dst_entry->start);
 
 			if (src_entry->is_a_map) {
@@ -1843,7 +1803,6 @@ vm_map_copy(dst_map, src_map,
 
 				new_dst_map = dst_entry->object.share_map;
 				new_dst_start = dst_entry->offset;
-
 				/*
 				 *	Since the destination sharing entries
 				 *	will be merely deallocated, we can
@@ -1854,7 +1813,6 @@ vm_map_copy(dst_map, src_map,
 				 *	Note that we can only do so if the
 				 *	source and destination do not overlap.
 				 */
-
 				new_dst_end = new_dst_start + new_size;
 
 				if (new_dst_map != new_src_map) {
@@ -1875,11 +1833,9 @@ vm_map_copy(dst_map, src_map,
 				new_dst_start = dst_entry->start;
 				lock_set_recursive(&dst_map->lock);
 			}
-
 			/*
 			 *	Recursively copy the sharing map.
 			 */
-
 			(void) vm_map_copy(new_dst_map, new_src_map,
 				new_dst_start, new_size, new_src_start,
 				FALSE, FALSE);
@@ -1889,39 +1845,31 @@ vm_map_copy(dst_map, src_map,
 			if (src_map == new_src_map)
 				lock_clear_recursive(&src_map->lock);
 		}
-
 		/*
 		 *	Update variables for next pass through the loop.
 		 */
-
 		src_start = src_entry->end;
 		src_entry = src_entry->next;
 		dst_start = dst_entry->end;
 		dst_entry = dst_entry->next;
-
 		/*
 		 *	If the source is to be destroyed, here is the
 		 *	place to do it.
 		 */
-
 		if (src_destroy && src_map->is_main_map &&
 						dst_map->is_main_map)
 			vm_map_entry_delete(src_map, src_entry->prev);
 	}
-
 	/*
 	 *	Update the physical maps as appropriate
 	 */
-
 	if (src_map->is_main_map && dst_map->is_main_map) {
 		if (src_destroy)
 			pmap_remove(src_map->pmap, src_addr, src_addr + len);
 	}
-
 	/*
 	 *	Unlock the maps
 	 */
-
 	Return: ;
 
 	if (old_src_destroy)
@@ -2134,7 +2082,6 @@ vm_map_lookup(var_map, vaddr, fault_type, out_entry,
 	/*
 	 *	Lookup the faulting address.
 	 */
-
 	vm_map_lock_read(map);
 
 #define	RETURN(why) \
@@ -2147,7 +2094,6 @@ vm_map_lookup(var_map, vaddr, fault_type, out_entry,
 	 *	If the map has an interesting hint, try it before calling
 	 *	full blown lookup routine.
 	 */
-
 	simple_lock(&map->hint_lock);
 	entry = map->hint;
 	simple_unlock(&map->hint_lock);
@@ -2157,7 +2103,6 @@ vm_map_lookup(var_map, vaddr, fault_type, out_entry,
 	if ((entry == &map->header) ||
 	    (vaddr < entry->start) || (vaddr >= entry->end)) {
 		vm_map_entry_t	tmp_entry;
-
 		/*
 		 *	Entry was either not a valid hint, or the vaddr
 		 *	was not contained in the entry, so do a full lookup.
@@ -2168,11 +2113,9 @@ vm_map_lookup(var_map, vaddr, fault_type, out_entry,
 		entry = tmp_entry;
 		*out_entry = entry;
 	}
-
 	/*
 	 *	Handle submaps.
 	 */
-
 	if (entry->is_sub_map) {
 		vm_map_t	old_map = map;
 
@@ -2180,47 +2123,37 @@ vm_map_lookup(var_map, vaddr, fault_type, out_entry,
 		vm_map_unlock_read(old_map);
 		goto RetryLookup;
 	}
-		
 	/*
 	 *	Check whether this task is allowed to have
 	 *	this page.
 	 */
-
 	prot = entry->protection;
 	if ((fault_type & (prot)) != fault_type)
 		RETURN(KERN_PROTECTION_FAILURE);
-
 	/*
 	 *	If this page is not pageable, we have to get
 	 *	it for all possible accesses.
 	 */
-
 	if (*wired = (entry->wired_count != 0))
 		prot = fault_type = entry->protection;
-
 	/*
 	 *	If we don't already have a VM object, track
 	 *	it down.
 	 */
-
 	if (su = !entry->is_a_map) {
 	 	share_map = map;
 		share_offset = vaddr;
 	}
 	else {
 		vm_map_entry_t	share_entry;
-
 		/*
 		 *	Compute the sharing map, and offset into it.
 		 */
-
 		share_map = entry->object.share_map;
 		share_offset = (vaddr - entry->start) + entry->offset;
-
 		/*
 		 *	Look for the backing store object and offset
 		 */
-
 		vm_map_lock_read(share_map);
 
 		if (!vm_map_lookup_entry(share_map, share_offset,
@@ -2230,13 +2163,11 @@ vm_map_lookup(var_map, vaddr, fault_type, out_entry,
 		}
 		entry = share_entry;
 	}
-
 	/*
 	 *	If the entry was copy-on-write, we either ...
 	 */
-
 	if (entry->needs_copy) {
-	    	/*
+	   	/*
 		 *	If we want to write the page, we may as well
 		 *	handle that now since we've got the sharing
 		 *	map locked.
@@ -2244,7 +2175,6 @@ vm_map_lookup(var_map, vaddr, fault_type, out_entry,
 		 *	If we don't need to write the page, we just
 		 *	demote the permissions allowed.
 		 */
-
 		if (fault_type & VM_PROT_WRITE) {
 			/*
 			 *	Make a new object, and place it in the
@@ -2252,7 +2182,6 @@ vm_map_lookup(var_map, vaddr, fault_type, out_entry,
 			 *	have appeared -- one just moved from the
 			 *	share map to the new object.
 			 */
-
 			if (lock_read_to_write(&share_map->lock)) {
 				if (share_map != map)
 					vm_map_unlock_read(map);
@@ -2277,7 +2206,6 @@ vm_map_lookup(var_map, vaddr, fault_type, out_entry,
 			prot &= (~VM_PROT_WRITE);
 		}
 	}
-
 	/*
 	 *	Create an object if necessary.
 	 */
@@ -2294,19 +2222,15 @@ vm_map_lookup(var_map, vaddr, fault_type, out_entry,
 		entry->offset = 0;
 		lock_write_to_read(&share_map->lock);
 	}
-
 	/*
 	 *	Return the object/offset from this entry.  If the entry
 	 *	was copy-on-write or empty, it has been fixed up.
 	 */
-
 	*offset = (share_offset - entry->start) + entry->offset;
 	*object = entry->object.vm_object;
-
 	/*
 	 *	Return whether this is the only map sharing this data.
 	 */
-
 	if (!su) {
 		simple_lock(&share_map->ref_lock);
 		su = (share_map->ref_count == 1);
