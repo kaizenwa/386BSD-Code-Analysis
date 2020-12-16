@@ -48,7 +48,7 @@ File: ufs_vnops.c
 	ufs_strategy		+++
 
 File: ufs_inode.c
-	iget				--+
+	iget				+++
 
 File: vfs__bio.c
 	bread				+++
@@ -1258,6 +1258,8 @@ found:
 		cache_enter(ndp);
 	return (0);
 }
+
+
 
 /*
  * Find the block in the buffer pool.

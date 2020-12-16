@@ -109,30 +109,45 @@ iget(xp, ino, ipp)
 
 	ih = &ihead[INOHASH(dev, ino)];
 loop:
+	/*
+	 * Obtaining an in-core inode
+	 */
 	for (ip = ih->ih_chain[0]; ip != (struct inode *)ih; ip = ip->i_forw) {
+		/* If the hashed ino or dev don't match, skip to next entry */
 		if (ino != ip->i_number || dev != ip->i_dev)
 			continue;
+		/*
+		 * If the hashed ino is locked, we sleep on it
+		 * and try again later 
+		 */
 		if ((ip->i_flag&ILOCKED) != 0) {
 			ip->i_flag |= IWANT;
 			sleep((caddr_t)ip, PINOD);
 			goto loop;
 		}
+		/* Increment the vnode's ref count and lock it */
 		if (vget(ITOV(ip)))
 			goto loop;
+
+		/* Assign the inode and return */
 		*ipp = ip;
 		return(0);
 	}
 	/*
 	 * Allocate a new inode.
 	 */
+
+	/* Create a new vnode */
 	if (error = getnewvnode(VT_UFS, mntp, &ufs_vnodeops, &nvp)) {
 		*ipp = 0;
 		return (error);
 	}
+
+	/* Initialize the vnode's inode fields */
 	ip = VTOI(nvp);
 	ip->i_vnode = nvp;
 	ip->i_flag = 0;
-	ip->i_devvp = 0;
+	ip->i_devvp = 0;	/* dev's vnode ptr */
 	ip->i_mode = 0;
 	ip->i_diroff = 0;
 	ip->i_lockf = 0;
@@ -151,7 +166,8 @@ loop:
 	insque(ip, ih);
 	ILOCK(ip);
 	/*
-	 * Read in the disk contents for the inode.
+	 * Read in the disk contents for the inode. We use this
+	 * bread so that we can point the inode to its disk blk.
 	 */
 	if (error = bread(VFSTOUFS(mntp)->um_devvp, fsbtodb(fs, itod(fs, ino)),
 	    (int)fs->fs_bsize, NOCRED, &bp)) {
@@ -161,6 +177,9 @@ loop:
 		 * Iput() will take care of putting it back on the free list.
 		 */
 		remque(ip);
+		/*
+ 		 * Reset inode's linked list ptrs
+ 		 */
 		ip->i_forw = ip;
 		ip->i_back = ip;
 		/*
@@ -171,6 +190,10 @@ loop:
 		*ipp = 0;
 		return (error);
 	}
+	/*
+	 * Use the buf to point ip->i_din to the new inode's
+ 	 * disk blk.
+ 	 */
 	dp = bp->b_un.b_dino;
 	dp += itoo(fs, ino);
 	ip->i_din = *dp;
@@ -178,8 +201,10 @@ loop:
 	/*
 	 * Initialize the associated vnode
 	 */
-	vp = ITOV(ip);
+	vp = ITOV(ip);	/* Why not vp = ip->i_vnode? */ 
 	vp->v_type = IFTOVT(ip->i_mode);
+
+	/* Ignore FIFOs for now */
 	if (vp->v_type == VFIFO) {
 #ifdef FIFO
 		extern struct vnodeops fifo_inodeops;
@@ -191,6 +216,11 @@ loop:
 #endif /* FIFO */
 	}
 	if (vp->v_type == VCHR || vp->v_type == VBLK) {
+		/*
+		 * Vnodes for regular files use spec_inodeops for
+		 * there vnops structure. This is verification of
+		 * lookup.md's code flow.
+		 */
 		vp->v_op = &spec_inodeops;
 		if (nvp = checkalias(vp, ip->i_rdev, mntp)) {
 			/*
@@ -213,6 +243,7 @@ loop:
 			ip = iq;
 		}
 	}
+	/* The vnode of the root dir has the VROOT flag */
 	if (ino == ROOTINO)
 		vp->v_flag |= VROOT;
 	/*

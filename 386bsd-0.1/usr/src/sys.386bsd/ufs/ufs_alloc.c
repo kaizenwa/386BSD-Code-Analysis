@@ -301,20 +301,44 @@ ialloc(pip, ipref, mode, cred, ipp)
 	
 	*ipp = 0;
 	fs = pip->i_fs;
+
+	/* Check csum structure for available inodes */
 	if (fs->fs_cstotal.cs_nifree == 0)
 		goto noinodes;
+
+	/* Set ipref to 0 if it is too large */
 	if (ipref >= fs->fs_ncg * fs->fs_ipg)
 		ipref = 0;
+
+	/*
+	 * Inode to Cylinder group:
+	 *
+	 * itog(fs,x) ((x) / (fs)->fs_ipg)
+	 */
 	cg = itog(fs, ipref);
+
+	/*
+	 * Calls hashalloc to find a free blk in the pref cylinder
+	 * group if possible. Otherwise, it uses a quadratic hash
+	 * to try to find free blk in another cg. If that fails,
+	 * it brute searches.
+	 */
 	ino = (ino_t)hashalloc(pip, cg, (long)ipref, mode, ialloccg);
 	if (ino == 0)
 		goto noinodes;
+
+	/* Returns the in-core vnode for the dinode */
 	error = iget(pip, ino, ipp);
 	if (error) {
 		ifree(pip, ino, mode);
 		return (error);
 	}
 	ip = *ipp;
+	/*
+	 * If the newly allocated ino has a mode or file blks,
+	 * it means that we have already allocated this ino nb
+	 * before. Therefore, we must panic.
+	 */
 	if (ip->i_mode) {
 		printf("mode = 0%o, inum = %d, fs = %s\n",
 		    ip->i_mode, ip->i_number, fs->fs_fsmnt);
