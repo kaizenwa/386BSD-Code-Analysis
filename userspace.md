@@ -30,7 +30,7 @@ main
 
 ### Source Code Commentary (Single-user Mode)
 
-#### main (/sbin/init/init.c:151)
+#### main (freebsd-1/sbin/init/init.c:151)
 
 ```txt
 167: Calls setsid.
@@ -44,7 +44,7 @@ main
 236: Parent calls wait.
 ```
 
-#### setsid (/sys/kern/kern\_prot.c:172)
+#### setsid (386bsd-0.1/sys/kern/kern\_prot.c:172)
 
 ```txt
 Control Flow:
@@ -52,7 +52,7 @@ main
     setsid <-- Here
 ```
 
-#### revoke (/sys/kern/vfs\_syscalls.c:1741)
+#### revoke (386bsd-0.1/sys/kern/vfs\_syscalls.c:1741)
 
 ```txt
 Control Flow:
@@ -61,7 +61,7 @@ main
     revoke <-- Here (child)
 ```
 
-#### login\_tty (/usr/src/lib/libutil/login\_tty.c:41)
+#### login\_tty (386bsd-0.1/usr/src/lib/libutil/login\_tty.c:41)
 
 ```txt
 Control Flow:
@@ -69,6 +69,37 @@ main
     setsid
     revoke
     login_tty <-- Here (child)
+
+44: Calls setsid.
+
+45: Calls ioctl on /dev/console to set it as the controlling terminal.
+
+47-49: Calls dup2 to create STDIN, STDOUT, and STDERR.
+```
+
+#### ioctl (386bsd-0.1/sys/kern/sys\_generic.c:346)
+
+```txt
+Control Flow:
+main
+    setsid
+    revoke
+    login_tty
+        ioctl <-- Here (child)
+
+462: Calls ttioctl.
+```
+
+#### ttioctl (386bsd-0.1/sys/kern/tty.c:284)
+
+```txt
+Control Flow:
+main
+    setsid
+    revoke
+    login_tty
+        ioctl
+            ttioctl <-- Here (child)
 ```
 
 #### execl (/usr/src/lib/libc/gen/exec.c:86)
@@ -122,7 +153,7 @@ main
 
 ```
 
-#### setsid (/sys/kern/kern\_prot.c:172)
+#### setsid (386bsd-0.1/sys/kern/kern\_prot.c:172)
 
 ```txt
 Control Flow:
@@ -130,7 +161,7 @@ main
     setsid <-- Here
 ```
 
-#### saccess (/sys/kern/vfs\_syscalls.c:973)
+#### saccess (386bsd-0.1/sys/kern/vfs\_syscalls.c:973)
 
 ```txt
 Control Flow:
@@ -139,7 +170,7 @@ main
     saccess <-- Here (child)
 ```
 
-#### revoke (/sys/kern/vfs\_syscalls.c:1741)
+#### revoke (386bsd-0.1/sys/kern/vfs\_syscalls.c:1741)
 
 ```txt
 Control Flow:
@@ -148,7 +179,7 @@ main
     revoke <-- Here (child)
 ```
 
-#### login\_tty (/usr/src/lib/libutil/login\_tty.c:41)
+#### login\_tty (386bsd-0.1/usr/src/lib/libutil/login\_tty.c:41)
 
 ```txt
 Control Flow:
@@ -158,7 +189,7 @@ main
     login_tty <-- Here (child)
 ```
 
-#### execl (/usr/src/lib/libc/gen/exec.c:86)
+#### execl (386bsd-0.1/usr/src/lib/libc/gen/exec.c:86)
 
 ```txt
 Control Flow:
@@ -183,7 +214,7 @@ main
 
 ```
 
-#### setttyent (/usr/src/lib/libc/gen/getttyent.c:177)
+#### setttyent (386bsd-0.1/usr/src/lib/libc/gen/getttyent.c:177)
 
 ```txt
 Control Flow:
