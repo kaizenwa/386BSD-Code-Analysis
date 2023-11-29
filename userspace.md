@@ -30,7 +30,7 @@ main
 
 ### Source Code Commentary (Single-user Mode)
 
-#### main (freebsd-1/sbin/init/init.c:151)
+#### main (freebsd-1.0/sbin/init/init.c:151)
 
 ```txt
 167: Calls setsid.
@@ -124,7 +124,7 @@ main
 
 ### Source Code Commentary (Multi-user Mode)
 
-#### main (/sbin/init/init.c:151) 
+#### main (freebsd-1.0/sbin/init/init.c:151) 
 
 ```txt
 167: Calls setsid.
@@ -150,7 +150,13 @@ main
 
 243: Parent calls setttyent.
 
+244-248: Initializes the entries in the ttytab (line 81) using /etc/ttys.
 
+250: Assigns the current value of tt to ttyabend.
+
+251: Calls endttyent.
+
+252: Calls getty for each entry in the ttytab.
 ```
 
 #### setsid (386bsd-0.1/sys/kern/kern\_prot.c:172)
@@ -221,4 +227,51 @@ Control Flow:
 main
     setsid
     setttyent <-- Here (parent)
+
+
+181: Calls rewind if tf already points to a file.
+
+183: Calls fopen to open /etc/ttys as a read-only file.
+```
+
+#### endttyent (/386bsd-0.1/usr/src/lib/libc/gen/getttyent.c:189)
+
+```txt
+Control Flow:
+main
+    setsid
+    setttyent
+    gettyent
+    endttyent <-- Here (parent)
+
+193-197: Calls fclose on tf if it points to a file and returns rval.
+```
+
+#### getty (freebsd-1.0/libexec/getty/main.c:137)
+
+```txt
+Control Flow:
+main
+    setsid
+    setttyent
+    getttyent
+    endttyent
+    getty <-- Here (parent)
+
+237: Calls getname.
+
+255: Calls execle to create a login shell for the user.
+```
+
+#### getname (386bsd-0.1/usr/src/libexec/getty/main.c:288)
+
+```txt
+Control Flow:
+main
+    setsid
+    setttyent
+    getttyent
+    endttyent
+    getty
+        getname <-- Here (parent)
 ```
