@@ -136,9 +136,8 @@ main
 204: Child calls login_tty on /dev/console.
 
 205: Child calls execl on /bin/sh, passing /etc/rc as an
-     argument.
-
-206: Calls _exit.
+     argument. We will assume the child process exits after
+     executing the rc script.
 
 208: Parent sets Reboot to zero.
 
@@ -148,7 +147,7 @@ main
 
 214: Parent calls logwtmp.
 
-243: Parent calls setttyent.
+243: Calls setttyent.
 
 244-248: Initializes the entries in the ttytab (line 81) using /etc/ttys.
 
@@ -157,6 +156,8 @@ main
 251: Calls endttyent.
 
 252: Calls getty for each entry in the ttytab.
+
+313: Sets the drain global variable to zero.
 ```
 
 #### setsid (386bsd-0.1/sys/kern/kern\_prot.c:172)
@@ -226,7 +227,7 @@ main
 Control Flow:
 main
     setsid
-    setttyent <-- Here (parent)
+    setttyent <-- Here
 
 
 181: Calls rewind if tf already points to a file.
@@ -242,9 +243,38 @@ main
     setsid
     setttyent
     gettyent
-    endttyent <-- Here (parent)
+    endttyent <-- Here
 
 193-197: Calls fclose on tf if it points to a file and returns rval.
+```
+
+#### getty (freebsd-1.0/sbin/init/init.c:344)
+
+```txt
+Control Flow:
+main
+    setsid
+    setttyent
+    gettyent
+    endttyent
+    getty <-- Here
+
+354: Calls fork to create a child process.
+
+356-360: Parent process returns early.
+
+         Note: How does this work? The fork call assigns two return
+               values to tt->tt_pid, so wouldn't that cause a race
+               condition?
+
+               I suppose I should study 386BSD's fork code in-depth
+               to find an answer to this. If the child process
+               always executes first, then this is really easy to
+               understand.
+
+364: Calls sigsetmask.
+
+384: Calls execve to execute /usr/libexec/getty.
 ```
 
 #### getty (freebsd-1.0/libexec/getty/main.c:137)
@@ -256,9 +286,17 @@ main
     setttyent
     getttyent
     endttyent
-    getty <-- Here (parent)
+    getty
+        /usr/libexec/getty <-- Here
 
 237: Calls getname.
+
+250: Calls ioctl to set the TIOCSLTC option.
+
+251-252: Copies pointers from the environ external variable to
+         the env global variable.
+
+253: Calls makeenv.
 
 255: Calls execle to create a login shell for the user.
 ```
@@ -273,5 +311,32 @@ main
     getttyent
     endttyent
     getty
-        getname <-- Here (parent)
+        /usr/libexec/getty
+            getname <-- Here
+
+297-301: Initializes the interrupt handler code.
+
+305: Prints the login prompt to the terminal screen.
+
+311: Calls ioctl to set the TIOCSETP option.
+
+314-356: Reads input from STDIN until we either fill the name buffer
+         or the user presses enter (corresponds to '\r' || '\n').
+
+365: Returns 1.
+```
+
+#### makeenv (/386bsd-0.1/usr/src/libexec/getty/subr.c:376)
+
+```txt
+Control Flow:
+main
+    setsid
+    setttyent
+    getttyent
+    endttyent
+    getty
+        /usr/libexec/getty
+            getname
+            makeenv <-- Here
 ```
