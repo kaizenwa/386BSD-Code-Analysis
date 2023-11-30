@@ -22,6 +22,13 @@ to do with underlying hardware.
 ```txt
 167: Calls setsid.
 
+170: Calls signal to setup the signal handler for SIGHUP.
+
+171: Calls signal to setup the signal handler for SIGTSTP.
+
+173-176: Calls signal to ignore the SIGTTIN, SIGTTOU, SIGCHLD,
+         and SIGINT signals.
+
 191: Calls saccess on /etc/rc.
 
 201: Child calls revoke on /dev/console.
@@ -29,8 +36,8 @@ to do with underlying hardware.
 204: Child calls login_tty on /dev/console.
 
 205: Child calls execl on /bin/sh, passing /etc/rc as an
-     argument. We will assume the child process exits after
-     executing the rc script.
+     argument. The last command in rc is "exit 0", which
+     causes the child process to exit with the status of 0.
 
 208: Parent sets Reboot to zero.
 
@@ -39,6 +46,10 @@ to do with underlying hardware.
 212-213: Parent calls pause if the child received SIGKILL.
 
 214: Parent calls logwtmp.
+
+Note: The parent process init is executing the rest of the code
+      since the child process that executed rc exited with a
+      status of 0.
 
 243: Calls setttyent.
 
@@ -59,6 +70,26 @@ to do with underlying hardware.
 Control Flow:
 main
     setsid <-- Here
+
+181: Calls enterpgrp.
+```
+
+#### enterpgrp (386bsd-0.1/sys/kern/kern\_proc.c:97)
+
+```txt
+Control Flow:
+main
+    setsid
+        enterpgrp <-- Here
+```
+
+#### signal (386bsd-0.1/usr/src/lib/libc/gen/signal.c:46)
+
+```txt
+Control Flow:
+main
+    setsid
+    signal <-- Here
 ```
 
 #### saccess (386bsd-0.1/sys/kern/vfs\_syscalls.c:973)
@@ -67,6 +98,7 @@ main
 Control Flow:
 main
     setsid
+    signal
     saccess <-- Here (child)
 ```
 
@@ -76,6 +108,8 @@ main
 Control Flow:
 main
     setsid
+    signal
+    saccess
     revoke <-- Here (child)
 ```
 
@@ -85,6 +119,8 @@ main
 Control Flow:
 main
     setsid
+    signal
+    saccess
     revoke
     login_tty <-- Here (child)
 
@@ -101,6 +137,8 @@ main
 Control Flow:
 main
     setsid
+    signal
+    saccess
     revoke
     login_tty
     execl <-- Here (child)
@@ -113,11 +151,23 @@ main
 
 18-19: Exports /sbin:/bin:/usr/sbin:/usr/bin as the PATH variable.
 
+60: Runs swapon -a to make all devices in /etc/fstab available for
+    paging and swapping.
+
 79-82: Runs /etc/rc.serial scrip to configure serial devices.
 
 86: Runs /etc/netstart to turn on the network.
 
+97: Runs syslogd.
 
+...
+
+238: Runs the rc.local script.
+```
+
+#### rc.local (freebsd-1.0/etc/rc.local:7)
+
+```txt
 ```
 
 #### setttyent (386bsd-0.1/usr/src/lib/libc/gen/getttyent.c:177)
@@ -126,6 +176,8 @@ main
 Control Flow:
 main
     setsid
+    signal
+    saccess
     setttyent <-- Here
 
 
@@ -140,6 +192,8 @@ main
 Control Flow:
 main
     setsid
+    signal
+    saccess
     setttyent
     gettyent
     endttyent <-- Here
@@ -153,6 +207,8 @@ main
 Control Flow:
 main
     setsid
+    signal
+    saccess
     setttyent
     gettyent
     endttyent
@@ -182,6 +238,8 @@ main
 Control Flow:
 main
     setsid
+    signal
+    saccess
     setttyent
     getttyent
     endttyent
@@ -206,6 +264,8 @@ main
 Control Flow:
 main
     setsid
+    signal
+    saccess
     setttyent
     getttyent
     endttyent
@@ -231,6 +291,8 @@ main
 Control Flow:
 main
     setsid
+    signal
+    saccess
     setttyent
     getttyent
     endttyent
