@@ -8,121 +8,14 @@ to do with underlying hardware.
 ### Contents
 
 1. Code Flow
-2. Source Code Commentary (Single-user Mode)
-3. Source Code Commentary (Multi-user Mode)
+3. Source Code Commentary
 
 ### Code Flow
 
-#### Single-user Mode
-
-```txt
-main
-    setsid
-    revoke
-    login_tty
-    execl
-```
-
-#### Multi-user Mode
-
 ```txt
 ```
 
-### Source Code Commentary (Single-user Mode)
-
-#### main (freebsd-1.0/sbin/init/init.c:151)
-
-```txt
-167: Calls setsid.
-
-229: Child calls revoke on /dev/console.
-
-232: Child calls login_tty on /dev/console.
-
-233: Child calls execl on /bin/sh.
-
-236: Parent calls wait.
-```
-
-#### setsid (386bsd-0.1/sys/kern/kern\_prot.c:172)
-
-```txt
-Control Flow:
-main
-    setsid <-- Here
-```
-
-#### revoke (386bsd-0.1/sys/kern/vfs\_syscalls.c:1741)
-
-```txt
-Control Flow:
-main
-    setsid
-    revoke <-- Here (child)
-```
-
-#### login\_tty (386bsd-0.1/usr/src/lib/libutil/login\_tty.c:41)
-
-```txt
-Control Flow:
-main
-    setsid
-    revoke
-    login_tty <-- Here (child)
-
-44: Calls setsid.
-
-45: Calls ioctl on /dev/console to set it as the controlling terminal.
-
-47-49: Calls dup2 to create STDIN, STDOUT, and STDERR.
-```
-
-#### ioctl (386bsd-0.1/sys/kern/sys\_generic.c:346)
-
-```txt
-Control Flow:
-main
-    setsid
-    revoke
-    login_tty
-        ioctl <-- Here (child)
-
-462: Calls ttioctl.
-```
-
-#### ttioctl (386bsd-0.1/sys/kern/tty.c:284)
-
-```txt
-Control Flow:
-main
-    setsid
-    revoke
-    login_tty
-        ioctl
-            ttioctl <-- Here (child)
-```
-
-#### execl (/usr/src/lib/libc/gen/exec.c:86)
-
-```txt
-Control Flow:
-main
-    setsid
-    revoke
-    login_tty
-    execl <-- Here (child)
-```
-
-#### wait (/usr/src/lib/libc/gen/wait.c:44)
-
-```txt
-Control Flow:
-main
-    setsid
-    wait <-- (parent)
-```
-
-### Source Code Commentary (Multi-user Mode)
+### Source Code Commentary
 
 #### main (freebsd-1.0/sbin/init/init.c:151) 
 
@@ -194,6 +87,12 @@ main
     setsid
     revoke
     login_tty <-- Here (child)
+
+44: Calls setsid.
+
+45: Calls ioctl on /dev/console to set it as the controlling terminal.
+
+47-49: Calls dup2 to create STDIN, STDOUT, and STDERR.
 ```
 
 #### execl (386bsd-0.1/usr/src/lib/libc/gen/exec.c:86)
