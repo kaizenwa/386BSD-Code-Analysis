@@ -232,7 +232,7 @@ main
 384: Calls execve to execute /usr/libexec/getty.
 ```
 
-#### getty (freebsd-1.0/libexec/getty/main.c:137)
+#### main (freebsd-1.0/libexec/getty/main.c:137)
 
 ```txt
 Control Flow:
@@ -244,7 +244,7 @@ main
     getttyent
     endttyent
     getty
-        /usr/libexec/getty <-- Here
+        main <-- Here
 
 237: Calls getname.
 
@@ -270,7 +270,7 @@ main
     getttyent
     endttyent
     getty
-        /usr/libexec/getty
+        main
             getname <-- Here
 
 297-301: Initializes the interrupt handler code.
@@ -297,7 +297,7 @@ main
     getttyent
     endttyent
     getty
-        /usr/libexec/getty
+        main
             getname
             makeenv <-- Here
 ```
